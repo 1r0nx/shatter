@@ -1,65 +1,73 @@
 from gmpy2 import iroot
 from tqdm import tqdm
-from Crypto.Util.number import long_to_bytes, bytes_to_long
+from Crypto.Util.number import long_to_bytes
 import itertools
 import gmpy2
-import json
 import math
 import sympy
 import owiener
 import sys
 
 
-def parse_list(s):
+# ── Parsing ───────────────────────────────────────────────────────────────────
+
+def parse_list(s: str) -> list[int]:
+    """Parse a comma-separated string into a list of integers."""
     return list(map(int, s.split(",")))
 
 
-def egcd(a, b):
+# ── Math helpers ──────────────────────────────────────────────────────────────
+
+def egcd(a: int, b: int) -> tuple[int, int, int]:
+    """Extended Euclidean algorithm. Returns (gcd, x, y) s.t. a*x + b*y = gcd."""
     if b == 0:
         return (a, 1, 0)
-    else:
-        g, x1, y1 = egcd(b, a % b)
-        return (g, y1, x1 - (a // b) * y1)
+    g, x1, y1 = egcd(b, a % b)
+    return (g, y1, x1 - (a // b) * y1)
 
 
-def modinv(a, m):
+def modinv(a: int, m: int) -> int:
+    """Modular inverse of a mod m. Raises ValueError if it doesn't exist."""
     g, x, _ = egcd(a, m)
     if g != 1:
-        raise ValueError("Inverse modular do not exist")
+        raise ValueError(f"Modular inverse does not exist (gcd={g})")
     return x % m
 
 
 def bytes_to_int(b: bytes) -> int:
     return int.from_bytes(b, byteorder="big")
 
-
 def int_to_bytes(i: int) -> bytes:
     if i == 0:
         return b"\x00"
-    length = (i.bit_length() + 7) // 8
-    return i.to_bytes(length, byteorder="big")
+    return i.to_bytes((i.bit_length() + 7) // 8, byteorder="big")
+
+def nth_root_gmp(x: int, n: int) -> int:
+    return int(gmpy2.iroot(x, n)[0])
 
 
-def compute_d(p, q, e):
-    phi_n = (p - 1) * (q - 1)
-    d = pow(e, -1, phi_n)
-    return d
+# ── Core RSA operations ───────────────────────────────────────────────────────
+
+def compute_d(p: int, q: int, e: int) -> int:
+    """Compute private exponent d from primes p, q and public exponent e."""
+    return pow(e, -1, (p - 1) * (q - 1))
+
+def decode_rsa(c: int, d: int, n: int) -> str:
+    """Decrypt ciphertext c with private key (d, n) and decode as UTF-8."""
+    return int_to_bytes(pow(c, d, n)).decode("utf-8")
 
 
-def decode_rsa(c, d, n):
-    int_flag = pow(c, d, n)
-    hex_flag = hex(int_flag)[2:]
-    str_flag = bytes.fromhex(hex_flag).decode("utf-8")
-    return str_flag
+# ── Factorisation ─────────────────────────────────────────────────────────────
 
-
-def factor_rsa(n, max_fermat_iter=1000000):
+def factor_rsa(n: int, max_fermat_iter: int = 1_000_000) -> list[int]:
     """
-    Try n with two methods :
-    1. Fermat factorisation if numbers are close
-    2. Else sympy factorization will be used
+    Factor n using:
+      1. Trivial even check
+      2. Perfect-square check
+      3. Fermat's method  (fast when p ≈ q)
+      4. SymPy fallback   (general case)
+    Returns [p, q].
     """
-
     if n % 2 == 0:
         return [2, n // 2]
 
@@ -70,90 +78,78 @@ def factor_rsa(n, max_fermat_iter=1000000):
 
     for _ in range(max_fermat_iter):
         b2 = a * a - n
-        b = math.isqrt(b2)
+        b  = math.isqrt(b2)
         if b * b == b2:
-            p = a - b
-            q = a + b
+            p, q = a - b, a + b
             if p * q == n:
                 return [p, q]
         a += 1
 
-    # If Fermat is slow, we try SymPy
     factors = sympy.factorint(n)
-    if len(factors) == 2:
-        p = list(factors.keys())[0]
-        q = list(factors.keys())[1]
-        print(p, q)
-        return [p, q]
-    else:
-        print("\nNo possible factorization!")
-        sys.exit(0)
+    keys = list(factors.keys())
+    if len(keys) == 2:
+        return keys
+    print("[!] No factorisation found.", file=sys.stderr)
+    sys.exit(1)
 
 
-def coppersmiths_attack(n, e, c):
+# ── Attacks ───────────────────────────────────────────────────────────────────
+
+def coppersmiths_attack(n: int, e: int, c: int) -> str:
+    """
+    Small-exponent / short-plaintext attack.
+    Iterates c + k*n until a perfect e-th root is found.
+    """
     if c < n:
-        print("\npossible small exponent or short plain text attack\n")
+        print("[*] c < n → possible small-exponent or short-plaintext attack.")
 
-    for k in tqdm(itertools.count()):
-        c_before_mod = c + n * k
-        if iroot(c_before_mod, e)[1]:
+    for k in tqdm(itertools.count(), desc="Coppersmith", unit=" iter"):
+        candidate = c + n * k
+        root, exact = iroot(candidate, e)
+        if exact:
             break
-
     try:
-        plaintext = long_to_bytes(iroot(c_before_mod, e)[0])
-        return plaintext.decode().strip(" ")
-    except:
-        print("\nCannot decode in text!")
-        sys.exit(0)
+        return long_to_bytes(int(root)).decode().strip()
+    except Exception as exc:
+        print(f"[!] Cannot decode plaintext: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
-def owiener_attack(e, n):
+def owiener_attack(e: int, n: int) -> int:
+    """Wiener's attack: recover d when d is small relative to n."""
     d = owiener.attack(e, n)
+    if d is None:
+        print("[!] Wiener attack failed — d may not be small enough.", file=sys.stderr)
+        sys.exit(1)
     return d
 
 
-def nth_root_gmp(x, n):
-    return int(gmpy2.iroot(x, n)[0])
-
-
-def chinese_remainder_theorem(cs, ns):
+def chinese_remainder_theorem(cs: list[int], ns: list[int]) -> int:
+    """CRT: given residues cs and moduli ns, return unique X mod ∏ns."""
     if len(cs) != len(ns):
-        raise ValueError("cs et ns need to have the same size")
-
-    N = 1
-    for n in ns:
-        N *= n
-
-    X = 0
-    for ai, ni in zip(cs, ns):
-        Ni = N // ni  # N_i
-        Mi = pow(Ni, -1, ni)
-        X += ai * Ni * Mi
-
+        raise ValueError("cs and ns must have the same length")
+    N = math.prod(ns)
+    X = sum(
+        ai * (N // ni) * pow(N // ni, -1, ni)
+        for ai, ni in zip(cs, ns)
+    )
     return X % N
 
 
-def common_modulus(n, c1, c2, e1, e2):
+def common_modulus(n: int, c1: int, c2: int, e1: int, e2: int) -> str:
+    """
+    Common-modulus attack: same n, same plaintext, different coprime (e1, e2).
+    """
     g, a, b = egcd(e1, e2)
     if g != 1:
-        raise ValueError("e1 and e2 are not prime together")
+        raise ValueError(f"gcd(e1, e2) = {g} ≠ 1 — attack requires coprime exponents")
 
-    if a < 0:
-        inv_c1 = modinv(c1, n)
-        part1 = pow(inv_c1, -a, n)
-    else:
-        part1 = pow(c1, a, n)
+    def _pow_maybe_neg(base: int, exp: int, mod: int) -> int:
+        return pow(modinv(base, mod), -exp, mod) if exp < 0 else pow(base, exp, mod)
 
-    if b < 0:
-        inv_c2 = modinv(c2, n)
-        part2 = pow(inv_c2, -b, n)
-    else:
-        part2 = pow(c2, b, n)
-
-    recovered = (part1 * part2) % n
+    recovered = (_pow_maybe_neg(c1, a, n) * _pow_maybe_neg(c2, b, n)) % n
     try:
-        recovered_text = int_to_bytes(recovered).decode()
-        return recovered_text
-    except:
-        print("\nCannot decode as text!")
-        sys.exit(0)
+        return int_to_bytes(recovered).decode()
+    except Exception as exc:
+        print(f"[!] Cannot decode plaintext: {exc}", file=sys.stderr)
+        sys.exit(1)
