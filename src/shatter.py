@@ -150,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
             "  shatter.py boneh_durfee   -n <n> -e <e> -c <c> [--bd-delta 0.26] [--bd-m 4]\n"
         ),
     )
+    # --hex: interpret all integer inputs as hexadecimal
+    parser.add_argument(
+        "--hex",
+        action="store_true",
+        default=False,
+        help="interpret all integer inputs as hexadecimal (e.g. 1a2b instead of 0x1a2b)",
+    )
+
     sub = parser.add_subparsers(dest="attack", metavar="<attack>")
 
     # ── p_and_q ──────────────────────────────────────────────────────────────
@@ -422,8 +430,16 @@ def main():
         parser._subparsers._group_actions[0].choices[sys.argv[1]].print_help()
         sys.exit(0)
 
+    # Pre-scan sys.argv for --hex BEFORE parse_args() runs.
+    # This is necessary because argparse calls type=parse_int on each argument
+    # as it parses them, so HEX_MODE must be set before that happens.
+    if "--hex" in sys.argv:
+        _rsa.HEX_MODE = True
+
     args = parser.parse_args()
     banner()
+    if _rsa.HEX_MODE:
+        info("Hex mode enabled — all integer inputs are interpreted as hexadecimal.")
 
     try:
         match args.attack:

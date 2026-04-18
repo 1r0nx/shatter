@@ -78,55 +78,82 @@ class TestMathHelpers(unittest.TestCase):
 
 
 class TestParseInt(unittest.TestCase):
-    """parse_int: decimal and hex (with/without 0x prefix)."""
+    """parse_int: decimal mode by default, hex mode via HEX_MODE flag."""
+
+    def setUp(self):
+        # Always start each test in decimal mode
+        r.HEX_MODE = False
+
+    def tearDown(self):
+        # Reset after each test
+        r.HEX_MODE = False
+
+    # --- Decimal mode (default) ---
 
     def test_decimal(self):
         self.assertEqual(r.parse_int("12345"), 12345)
 
-    def test_hex_with_0x(self):
-        self.assertEqual(r.parse_int("0x1a2b"), 0x1a2b)
-
-    def test_hex_with_0X_upper(self):
-        self.assertEqual(r.parse_int("0X1A2B"), 0x1a2b)
-
-    def test_hex_without_prefix(self):
-        self.assertEqual(r.parse_int("deadbeef"), 0xdeadbeef)
-
-    def test_hex_mixed_case_no_prefix(self):
-        self.assertEqual(r.parse_int("DeAdBeEf"), 0xdeadbeef)
-
     def test_decimal_zero(self):
         self.assertEqual(r.parse_int("0"), 0)
 
-    def test_large_decimal(self):
+    def test_decimal_large(self):
         n = 2**512 + 7
         self.assertEqual(r.parse_int(str(n)), n)
 
-    def test_large_hex_with_prefix(self):
-        n = 2**512 + 7
-        self.assertEqual(r.parse_int(hex(n)), n)
-
-    def test_large_hex_without_prefix(self):
-        # Use a value whose hex representation contains letters (a-f)
-        # so it cannot be ambiguously parsed as decimal
-        n = 0xdeadbeefcafe1234567890abcdef
-        self.assertEqual(r.parse_int(hex(n)[2:]), n)  # "deadbeefcafe1234567890abcdef"
-
-    def test_whitespace_stripped(self):
-        self.assertEqual(r.parse_int("  0xff  "), 255)
-
-    def test_invalid_raises(self):
+    def test_decimal_invalid_raises(self):
         with self.assertRaises(ValueError):
-            r.parse_int("xyz_not_hex_or_dec")
+            r.parse_int("deadbeef")  # not decimal, no --hex
+
+    def test_decimal_whitespace_stripped(self):
+        self.assertEqual(r.parse_int("  255  "), 255)
+
+    # --- 0x prefix always forces hex regardless of mode ---
+
+    def test_0x_prefix_in_decimal_mode(self):
+        self.assertEqual(r.parse_int("0x1a2b"), 0x1a2b)
+
+    def test_0X_prefix_uppercase(self):
+        self.assertEqual(r.parse_int("0X1A2B"), 0x1a2b)
+
+    def test_0x_prefix_in_hex_mode(self):
+        r.HEX_MODE = True
+        self.assertEqual(r.parse_int("0xff"), 255)
+
+    # --- Hex mode (HEX_MODE = True) ---
+
+    def test_hex_mode_simple(self):
+        r.HEX_MODE = True
+        self.assertEqual(r.parse_int("ff"), 255)
+
+    def test_hex_mode_deadbeef(self):
+        r.HEX_MODE = True
+        self.assertEqual(r.parse_int("deadbeef"), 0xdeadbeef)
+
+    def test_hex_mode_uppercase(self):
+        r.HEX_MODE = True
+        self.assertEqual(r.parse_int("DEADBEEF"), 0xdeadbeef)
+
+    def test_hex_mode_large(self):
+        r.HEX_MODE = True
+        n = 0xdeadbeefcafe1234567890abcdef
+        self.assertEqual(r.parse_int(hex(n)[2:]), n)
+
+    def test_hex_mode_invalid_raises(self):
+        r.HEX_MODE = True
+        with self.assertRaises(ValueError):
+            r.parse_int("xyz_not_valid_hex")
+
+    # --- parse_list ---
 
     def test_parse_list_decimal(self):
         self.assertEqual(r.parse_list("1,2,3"), [1, 2, 3])
 
-    def test_parse_list_hex(self):
-        self.assertEqual(r.parse_list("0x1,0x2,0x3"), [1, 2, 3])
+    def test_parse_list_hex_mode(self):
+        r.HEX_MODE = True
+        self.assertEqual(r.parse_list("ff,1a,0b"), [255, 26, 11])
 
-    def test_parse_list_mixed(self):
-        self.assertEqual(r.parse_list("10,0xff,deadbeef"), [10, 255, 0xdeadbeef])
+    def test_parse_list_0x_prefix_decimal_mode(self):
+        self.assertEqual(r.parse_list("0x1,0x2,0x3"), [1, 2, 3])
 
     def test_chinese_remainder_theorem(self):
         cs = [2, 3, 2]
@@ -620,48 +647,56 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("delta", out + err)
 
-    def test_hex_input_0x_prefix(self):
-        """CLI accepts 0x-prefixed hex for all integer arguments."""
+    def test_hex_flag_with_0x_prefix(self):
+        """--hex flag: 0x-prefixed values are always parsed as hex."""
         p, q = 61, 53
         e = 17
         n = p * q
         m = ord("Z")
         c = pow(m, e, n)
         rc, out, err = self._run([
-            "p_and_q",
+            "--hex", "p_and_q",
             "-p", hex(p), "-q", hex(q), "-e", hex(e), "-c", hex(c)
         ])
         self.assertEqual(rc, 0)
         self.assertIn("Z", out)
 
-    def test_hex_input_no_prefix(self):
-        """CLI accepts hex without 0x prefix for all integer arguments."""
+    def test_hex_flag_without_prefix(self):
+        """--hex flag: bare hex strings (no 0x) are interpreted as hex."""
         p, q = 61, 53
         e = 17
         n = p * q
         m = ord("W")
         c = pow(m, e, n)
         rc, out, err = self._run([
-            "p_and_q",
+            "--hex", "p_and_q",
             "-p", hex(p)[2:], "-q", hex(q)[2:],
             "-e", hex(e)[2:], "-c", hex(c)[2:]
         ])
         self.assertEqual(rc, 0)
         self.assertIn("W", out)
 
-    def test_hex_with_d_cli(self):
-        """with_d command works with hex inputs."""
+    def test_hex_flag_with_d(self):
+        """--hex flag works with the with_d command."""
         p, q = 61, 53
         e, n = 17, 61*53
         d = pow(e, -1, (p-1)*(q-1))
         m = ord("X")
         c = pow(m, e, n)
         rc, out, err = self._run([
-            "with_d",
-            "-n", hex(n), "-d", hex(d), "-c", hex(c)
+            "--hex", "with_d",
+            "-n", hex(n)[2:], "-d", hex(d)[2:], "-c", hex(c)[2:]
         ])
         self.assertEqual(rc, 0)
         self.assertIn("X", out)
+
+    def test_no_hex_flag_rejects_bare_hex(self):
+        """Without --hex, bare hex strings should cause a parse error."""
+        rc, out, err = self._run([
+            "p_and_q",
+            "-p", "3d", "-q", "35", "-e", "11", "-c", "ae6"
+        ])
+        self.assertNotEqual(rc, 0)  # should fail
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

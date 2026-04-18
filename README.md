@@ -5,11 +5,6 @@ A comprehensive RSA attack toolkit for CTF challenges.
 
 ---
 
-## Disclaimer
-This have been write with x-rsa as an inspiration and with the use of claude AI
-
----
-
 ## Installation
 
 ```bash
@@ -30,12 +25,17 @@ python shatter.py <attack>     # print help for that specific attack
 python shatter.py --help       # list all attacks
 ```
 
-All integer arguments accept **decimal or hex** (with or without `0x` prefix):
+By default all integer arguments are **decimal**. Use the `--hex` flag to switch all inputs to hexadecimal:
 
 ```bash
-python shatter.py p_and_q -p 61 -q 53 -e 17 -c 2790          # decimal
-python shatter.py p_and_q -p 0x3d -q 0x35 -e 0x11 -c 0xae6   # hex with 0x
-python shatter.py p_and_q -p 3d -q 35 -e 11 -c ae6            # hex without prefix
+# Decimal (default)
+python shatter.py p_and_q -p 61 -q 53 -e 17 -c 2790
+
+# Hex mode — pass --hex before the sub-command
+python shatter.py --hex p_and_q -p 3d -q 35 -e 11 -c ae6
+
+# 0x prefix always forces hex regardless of mode
+python shatter.py p_and_q -p 0x3d -q 0x35 -e 0x11 -c 0xae6
 ```
 
 ---
@@ -175,4 +175,3 @@ The `boneh_durfee` attack uses LLL lattice reduction to recover `d` when `d < N^
 3. If d is very close to N^0.292, try `--bd-delta 0.28` or `0.29`
 
 Requires: `pip install fpylll cysignals`
-

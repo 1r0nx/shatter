@@ -18,35 +18,44 @@ import random
 
 # ── Parsing ───────────────────────────────────────────────────────────────────
 
+# Global flag set by the CLI when --hex is passed.
+# When True, all integer arguments are interpreted as hexadecimal.
+HEX_MODE: bool = False
+
+
 def parse_int(s: str) -> int:
     """
-    Parse an integer from decimal or hex (with or without 0x prefix).
+    Parse an integer string as decimal (default) or hex (when --hex is active).
 
-    Accepts:
-        "12345"       decimal
-        "0x1a2b3c"    hex with prefix
-        "0X1A2B3C"    hex with prefix (uppercase X)
-        "1a2b3c"      hex without prefix (auto-detected)
-        "deadbeef"    hex without prefix
+    Decimal mode (default):
+        "12345"    -> 12345
+
+    Hex mode (--hex flag):
+        "1a2b"     -> 6699
+        "deadbeef" -> 3735928559
+
+    An explicit 0x/0X prefix always forces hex regardless of mode:
+        "0x1a2b"   -> 6699
     """
     s = s.strip()
+    # Explicit 0x prefix always means hex
     if s.lower().startswith("0x"):
         return int(s, 16)
+    # Otherwise defer to the active mode
+    base = 16 if HEX_MODE else 10
     try:
-        return int(s, 10)
+        return int(s, base)
     except ValueError:
-        pass
-    try:
-        return int(s, 16)
-    except ValueError:
+        mode = "hex" if HEX_MODE else "decimal"
         raise ValueError(
-            f"Cannot parse {s!r} as an integer. "
-            "Expected decimal (e.g. 12345) or hex (e.g. 0x1a2b or 1a2b)."
+            f"Cannot parse {s!r} as a {mode} integer. "
+            + ("Expected hex digits (e.g. 1a2b, deadbeef)." if HEX_MODE
+               else "Expected decimal digits (e.g. 12345). Use --hex for hex input.")
         )
 
 
 def parse_list(s: str) -> list[int]:
-    """Parse a comma-separated string of decimal or hex integers."""
+    """Parse a comma-separated string of integers (decimal or hex per active mode)."""
     return [parse_int(tok.strip()) for tok in s.split(",")]
 
 
