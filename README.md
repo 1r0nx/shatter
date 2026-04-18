@@ -5,6 +5,11 @@ A comprehensive RSA attack toolkit for CTF challenges.
 
 ---
 
+## Disclaimer
+This have been write with x-rsa as an inspiration and with the use of claude AI
+
+---
+
 ## Installation
 
 ```bash
@@ -170,3 +175,4 @@ The `boneh_durfee` attack uses LLL lattice reduction to recover `d` when `d < N^
 3. If d is very close to N^0.292, try `--bd-delta 0.28` or `0.29`
 
 Requires: `pip install fpylll cysignals`
+
