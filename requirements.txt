@@ -3,3 +3,5 @@ gmpy2
 tqdm
 sympy
 owiener
+requests
+rich
