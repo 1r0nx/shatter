@@ -77,10 +77,6 @@ def modinv(a: int, m: int) -> int:
         raise ValueError(f"Modular inverse does not exist for a={a}, m={m}")
 
 
-def bytes_to_int(b: bytes) -> int:
-    return int.from_bytes(b, byteorder="big")
-
-
 def int_to_bytes(i: int) -> bytes:
     if i == 0:
         return b"\x00"
@@ -95,11 +91,6 @@ def isqrt_exact(n: int) -> int | None:
     """Return integer square root of n if n is a perfect square, else None."""
     r = math.isqrt(n)
     return r if r * r == n else None
-
-
-def floorSqrt(n: int) -> int:
-    """Integer square root (floor)."""
-    return math.isqrt(n)
 
 
 # ── Core RSA operations ───────────────────────────────────────────────────────
@@ -410,7 +401,7 @@ def crt_decrypt(c: int, p: int, q: int, dp: int, dq: int) -> str:
     Garner's CRT decryption using pre-computed dp, dq.
     Faster alternative when dp = d mod (p-1) and dq = d mod (q-1) are known.
     """
-    q_inv = pow(p, -1, q)
+    q_inv = pow(q, -1, p)
     m1 = pow(c, dp, p)
     m2 = pow(c, dq, q)
     h = (q_inv * (m1 - m2)) % p
@@ -424,9 +415,6 @@ def common_modulus(n: int, c1: int, c2: int, e1: int, e2: int) -> str:
     Works even when Bezout coefficients are negative.
     """
     g, a, b = egcd(e1, e2)
-    if g != 1:
-        # Try with g-th root
-        pass
 
     def _pow_maybe_neg(base: int, exp: int, mod: int) -> int:
         if exp < 0:
@@ -480,10 +468,7 @@ def partial_d_attack(n: int, e: int, d_partial: int, c: int) -> str:
     Partial private key recovery (Boneh-Durfee half-d attack).
     Works when the lower half of d is known, for standard key sizes (2048/4096 bit).
     """
-    import sympy as sp
-
     bit_len_d0 = 2048
-    n_bits = int(sp.floor(sp.log(n) / sp.log(2)) + 1)
 
     test1 = pow(3, e, n)
     test2 = pow(5, e, n)
@@ -519,10 +504,7 @@ def multi_prime_attack(c: int, n: int, e: int, use_ecm: bool = True) -> str:
     primes = factor_ecm_primefactors(n)
     if not primes:
         raise ValueError("Could not factorise n for multi-prime attack")
-    phi = 1
-    for p in primes:
-        phi *= (p - 1)
-    d = pow(e, -1, phi)
+    d = compute_d_multi(primes, e)
     return decode_raw(pow(c, d, n))
 
 
@@ -547,14 +529,8 @@ def factordb_attack(c: int, n: int, e: int) -> str:
         p, q = factors
         d = compute_d(p, q, e)
     else:
-        phi = 1
-        for p in factors:
-            phi *= (p - 1)
-        d = pow(e, -1, phi)
-        n_check = 1
-        for p in factors:
-            n_check *= p
-        n = n_check
+        d = compute_d_multi(factors, e)
+        n = math.prod(factors)
     return decode_raw(pow(c, d, n))
 
 

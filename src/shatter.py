@@ -463,10 +463,7 @@ def main():
                     p, q = factors
                     d = _rsa.compute_d(p, q, args.e)
                 else:
-                    phi = 1
-                    for f in factors:
-                        phi *= (f - 1)
-                    d = pow(args.e, -1, phi)
+                    d = _rsa.compute_d_multi(factors, args.e)
                 flag = _rsa.decode_raw(pow(args.c, d, args.n))
 
             case "factordb":

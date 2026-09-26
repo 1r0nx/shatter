@@ -436,6 +436,22 @@ class TestAttackCRTDecrypt(unittest.TestCase):
         result = r.crt_decrypt(c, p, q, dp, dq)
         self.assertEqual(result, "garner")
 
+    def test_crt_decrypt_message_larger_than_a_prime(self):
+        # Regression: a plaintext bigger than the smaller prime forces h != 0,
+        # which only reconstructs correctly with the right CRT coefficient
+        # (q^-1 mod p). A short message that is smaller than both primes would
+        # give m1 == m2 and hide an incorrect coefficient.
+        p, q, e, d = gen_keypair(128)
+        n = p * q
+        dp = d % (p - 1)
+        dq = d % (q - 1)
+        m = _msg("flag{crt_decrypt}")
+        self.assertGreater(m, min(p, q))  # forces h != 0
+        self.assertLess(m, n)             # still a valid RSA message
+        c = _enc(m, e, n)
+        result = r.crt_decrypt(c, p, q, dp, dq)
+        self.assertEqual(result, "flag{crt_decrypt}")
+
 
 class TestAttackDpLeak(unittest.TestCase):
 
